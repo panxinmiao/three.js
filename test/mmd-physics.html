@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - loaders - MMD loader</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				font-family: Monospace;
+				background-color: #fff;
+				color: #000;
+				margin: 0px;
+				overflow: hidden;
+			}
+		</style>
+	</head>
+
+	<body>        
+        <script src='build/three.min.js'></script>
+        <script src="js/libs/mmdparser.min.js"></script>
+        <script src="js/libs/ammo.js"></script>
+
+        <script src="js/loaders/MMDLoader.js"></script>
+        <script src="js/animation/CCDIKSolver.js"></script>
+        <script src="https://cdn.rawgit.com/mrdoob/three.js/r97/examples/js/animation/MMDPhysics.js"></script>
+        <!-- <script src="js/animation/MMDPhysics.js"></script> -->
+        <script src="js/animation/MMDAnimationHelper.js"></script>
+
+        <script src="js/controls/OrbitControls.js"></script>
+
+        <script src="js/Detector.js"></script>
+        <script src="js/libs/stats.min.js"></script>
+        <script src="js/libs/dat.gui.min.js"></script>
+		<script>
+
+			var container, stats;
+            var loader;
+			var mesh, camera, scene, renderer;
+			var helper, physicsHelper;
+
+			var windowHalfX = window.innerWidth / 2;
+			var windowHalfY = window.innerHeight / 2;
+
+			var clock = new THREE.Clock();
+			
+			var objects;
+
+			var apiParams;
+			
+			
+			init();
+			animate();
+
+			function init() {
+				
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 2000 );
+				camera.position.z = 30;
+				// scene
+
+				scene = new THREE.Scene();
+
+				var gridHelper = new THREE.GridHelper( 40, 20 );
+				gridHelper.position.y = - 10;
+				scene.add( gridHelper );
+
+				var ambient = new THREE.AmbientLight( 0x666666 );
+				scene.add( ambient );
+
+				var directionalLight = new THREE.DirectionalLight( 0x887766 );
+				directionalLight.position.set( - 1, 1, 1 ).normalize();
+				scene.add( directionalLight );
+
+				//
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				// STATS
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				// model
+
+				function onProgress( xhr ) {
+
+					if ( xhr.lengthComputable ) {
+
+						var percentComplete = xhr.loaded / xhr.total * 100;
+						console.log( Math.round( percentComplete, 2 ) + '% downloaded' );
+
+					}
+
+				};
+
+				function onError( xhr ) {
+				};
+
+				var modelFile = 'https://cdn.rawgit.com/mrdoob/three.js/r87/examples/models/mmd/miku/miku_v2.pmd';
+				
+
+				helper = new THREE.MMDAnimationHelper( {
+					afterglow: 2.0
+				} );
+
+				loader = new THREE.MMDLoader();
+
+				loader.load( modelFile, function ( m ) {
+					mesh = m;
+                    mesh.position.y = - 10;
+                    mesh.originalMaterials = mesh.material;
+                    mesh.phongMaterials = makePhongMaterials( mesh.material );
+                    mesh.material = mesh.phongMaterials;
+					scene.add( mesh );
+					helper.enable( 'animation',false );
+					helper.add( mesh, {
+						physics: true
+					} );
+					helper.enable( 'ik', false );
+
+
+					// ikHelper = helper.objects.get( mesh ).ikSolver.createHelper();
+					// ikHelper.visible = false;
+					// scene.add( ikHelper );
+
+					physicsHelper = helper.objects.get( mesh ).physics.createHelper();
+					physicsHelper.visible = false;
+					scene.add( physicsHelper );
+
+					initGui();
+				}, onProgress, onError );
+
+				var controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+				window.addEventListener( 'resize', onWindowResize, false );
+
+
+				function makePhongMaterials( materials ) {
+
+					var array = [];
+
+					for ( var i = 0, il = materials.length; i < il; i ++ ) {
+
+						var m = new THREE.MeshPhongMaterial();
+						m.copy( materials[ i ] );
+						m.needsUpdate = true;
+
+						array.push( m );
+
+					}
+					
+					 return array;
+				}
+
+			}
+
+			function initGui() {
+
+				apiParams = {
+					'physics': true,
+					'show rigid bodies': false,
+					'rotation': false,
+					'speed': 0.15
+				};
+
+				var gui = new dat.GUI();
+
+				var meshGui = gui.addFolder('model');
+
+				meshGui.add( apiParams, 'physics' ).onChange( function () {
+					helper.enable( 'physics', apiParams[ 'physics' ] );
+				} );
+
+
+				meshGui.add( apiParams, 'show rigid bodies' ).onChange( function () {
+					if ( physicsHelper !== undefined ) physicsHelper.visible = apiParams[ 'show rigid bodies' ];
+				} );
+
+				meshGui.open();
+				
+				var controlGui = gui.addFolder('control');
+
+				controlGui.add( apiParams, 'rotation' );
+				controlGui.add( apiParams, 'speed', 0, 1, 0.01).name("speed");
+				
+				controlGui.open();
+
+
+
+			}
+
+			function onWindowResize() {
+
+				windowHalfX = window.innerWidth / 2;
+				windowHalfY = window.innerHeight / 2;
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+			}
+
+			//
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				stats.begin();
+				render();
+				stats.end();
+
+			}
+
+			function render() {
+				updateMesh();
+				helper.update( clock.getDelta() );
+				renderer.render( scene, camera );
+
+			}
+
+			function updateMesh(){
+				if(mesh){
+					if(apiParams.rotation){
+						var center = mesh.skeleton.bones[0];
+						center.rotation.y += apiParams.speed;
+					}
+
+
+				}
+				
+			}
+
+
+
+		</script>
+
+	</body>
+</html>
